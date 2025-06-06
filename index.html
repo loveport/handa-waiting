@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HANDA 부스 대기 시스템</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #eef2f5; }
+    .box { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; text-align: center; }
+    h2 { margin-bottom: 20px; }
+    button { padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; background: #007BFF; color: white; cursor: pointer; margin: 10px 0; }
+    .cancel-btn { background: #dc3545; }
+    #status { margin-top: 20px; font-size: 18px; color: #333; }
+    #alertBox { margin-top: 20px; background: #fffbcc; padding: 15px; border-radius: 8px; border: 1px solid #f0e68c; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>HANDA 부스 대기 시스템</h2>
+    <button id="registerBtn" onclick="registerQueue()">대기 등록하기</button>
+    <button id="cancelBtn" class="cancel-btn" onclick="cancelQueue()" style="display:none;">대기 취소</button>
+
+    <div id="status"></div>
+
+    <div id="alertBox" style="display:none;">
+      <strong>🔔 호출되었습니다!</strong>
+      <p>부스로 이동해 주세요.</p>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCd7VZ-Ihr-BKaZB3zGioJFOXE5kDSG9o4",
+      authDomain: "handawaiting-fa63c.firebaseapp.com",
+      databaseURL: "https://handawaiting-fa63c-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "handawaiting-fa63c",
+      storageBucket: "handawaiting-fa63c.appspot.com",
+      messagingSenderId: "799592766063",
+      appId: "1:799592766063:web:aa55ba86ddb04d3f7a4b9a"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let userKey = localStorage.getItem("userKey");
+
+    function registerQueue() {
+      if (userKey) {
+        alert("이미 등록되어 있습니다.");
+        return;
+      }
+
+      const timestamp = Date.now();
+      const newRef = db.ref("waitingQueue").push();
+      newRef.set(timestamp);
+      userKey = newRef.key;
+      localStorage.setItem("userKey", userKey);
+
+      document.getElementById("status").innerText = "대기열에 등록되었습니다.";
+      document.getElementById("cancelBtn").style.display = "inline-block";
+
+      checkCalledStatus();
+    }
+
+    function cancelQueue() {
+      if (!userKey) return;
+
+      if (confirm("정말로 대기를 취소하시겠습니까?")) {
+        db.ref("waitingQueue/" + userKey).remove();
+        db.ref("calledList/" + userKey).remove();
+        localStorage.removeItem("userKey");
+        userKey = null;
+
+        document.getElementById("status").innerText = "대기 취소되었습니다.";
+        document.getElementById("cancelBtn").style.display = "none";
+        document.getElementById("alertBox").style.display = "none";
+      }
+    }
+
+    function checkCalledStatus() {
+      if (!userKey) return;
+
+      db.ref("calledList/" + userKey).on("value", snapshot => {
+        const isCalled = snapshot.exists();
+
+        if (isCalled) {
+          document.getElementById("alertBox").style.display = "block";
+        } else {
+          document.getElementById("alertBox").style.display = "none";
+        }
+      });
+    }
+
+    window.onload = function () {
+      if (userKey) {
+        document.getElementById("status").innerText = "이미 대기열에 등록되어 있습니다.";
+        document.getElementById("cancelBtn").style.display = "inline-block";
+        checkCalledStatus();
+      }
+    };
+  </script>
+</body>
+</html>
