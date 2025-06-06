@@ -3,30 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HANDA 부스 대기 시스템</title>
+  <title>HANDA 부스 웨이팅</title>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; background: #eef2f5; }
-    .box { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; text-align: center; }
-    h2 { margin-bottom: 20px; }
-    button { padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; background: #007BFF; color: white; cursor: pointer; margin: 10px 0; }
-    .cancel-btn { background: #dc3545; }
-    #status { margin-top: 20px; font-size: 18px; color: #333; }
-    #alertBox { margin-top: 20px; background: #fffbcc; padding: 15px; border-radius: 8px; border: 1px solid #f0e68c; }
+    body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
+    .box { background: white; max-width: 500px; margin: auto; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; }
+    h2 { text-align: center; }
+    button { width: 100%; padding: 15px; font-size: 18px; border: none; border-radius: 8px; background: #007BFF; color: white; cursor: pointer; margin-top: 10px; }
+    p { text-align: center; font-size: 18px; }
+    .notification-toggle { margin-top: 10px; text-align: center; }
   </style>
 </head>
 <body>
   <div class="box">
-    <h2>HANDA 부스 대기 시스템</h2>
-    <button id="registerBtn" onclick="registerQueue()">대기 등록하기</button>
-    <button id="cancelBtn" class="cancel-btn" onclick="cancelQueue()" style="display:none;">대기 취소</button>
-
-    <div id="status"></div>
-
-    <div id="alertBox" style="display:none;">
-      <strong>🔔 호출되었습니다!</strong>
-      <p>부스로 이동해 주세요.</p>
+    <h2>HANDA 부스</h2>
+    <p>현재 호출 번호: <span id="currentNumber">0</span></p>
+    <p>내 대기 순번: <span id="myNumber">-</span></p>
+    <button onclick="takeNumber()">대기번호 받기</button>
+    <button onclick="cancelNumber()" id="cancelBtn" style="display:none; background:#dc3545;">대기 취소</button>
+    <div class="notification-toggle">
+      <label><input type="checkbox" id="notifyToggle" /> 알림 받기</label>
     </div>
   </div>
 
@@ -44,62 +41,76 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    let userKey = localStorage.getItem("userKey");
+    const currentEl = document.getElementById("currentNumber");
+    const myNumberEl = document.getElementById("myNumber");
+    const notifyToggle = document.getElementById("notifyToggle");
+    const cancelBtn = document.getElementById("cancelBtn");
 
-    function registerQueue() {
-      if (userKey) {
-        alert("이미 등록되어 있습니다.");
+    let myKey = localStorage.getItem("myKey");
+
+    // 실시간 대기열 업데이트 감지
+    db.ref().on("value", snapshot => {
+      const data = snapshot.val() || {};
+      const current = data.currentNumber || 0;
+      const queue = data.waitingQueue || {};
+      currentEl.textContent = current;
+
+      if (myKey && queue[myKey]) {
+        const keys = Object.keys(queue);
+        const sorted = keys.sort((a, b) => queue[a] - queue[b]);
+        const myIndex = sorted.indexOf(myKey);
+        myNumberEl.textContent = myIndex >= 0 ? myIndex + 1 : "-";
+
+        if (notifyToggle.checked && myIndex + 1 <= current) {
+          notifyUser();
+        }
+      } else {
+        if (myKey) {
+          myNumberEl.textContent = "-";
+          localStorage.removeItem("myKey");
+          myKey = null;
+          cancelBtn.style.display = "none";
+        }
+      }
+    });
+
+    function takeNumber() {
+      if (myKey) {
+        alert("이미 대기 중입니다.");
         return;
       }
-
-      const timestamp = Date.now();
-      const newRef = db.ref("waitingQueue").push();
-      newRef.set(timestamp);
-      userKey = newRef.key;
-      localStorage.setItem("userKey", userKey);
-
-      document.getElementById("status").innerText = "대기열에 등록되었습니다.";
-      document.getElementById("cancelBtn").style.display = "inline-block";
-
-      checkCalledStatus();
-    }
-
-    function cancelQueue() {
-      if (!userKey) return;
-
-      if (confirm("정말로 대기를 취소하시겠습니까?")) {
-        db.ref("waitingQueue/" + userKey).remove();
-        db.ref("calledList/" + userKey).remove();
-        localStorage.removeItem("userKey");
-        userKey = null;
-
-        document.getElementById("status").innerText = "대기 취소되었습니다.";
-        document.getElementById("cancelBtn").style.display = "none";
-        document.getElementById("alertBox").style.display = "none";
-      }
-    }
-
-    function checkCalledStatus() {
-      if (!userKey) return;
-
-      db.ref("calledList/" + userKey).on("value", snapshot => {
-        const isCalled = snapshot.exists();
-
-        if (isCalled) {
-          document.getElementById("alertBox").style.display = "block";
-        } else {
-          document.getElementById("alertBox").style.display = "none";
-        }
+      db.ref("waitingQueue").push().then(ref => {
+        myKey = ref.key;
+        localStorage.setItem("myKey", myKey);
+        db.ref("waitingQueue/" + myKey).set(Date.now());
+        cancelBtn.style.display = "block";
       });
     }
 
-    window.onload = function () {
-      if (userKey) {
-        document.getElementById("status").innerText = "이미 대기열에 등록되어 있습니다.";
-        document.getElementById("cancelBtn").style.display = "inline-block";
-        checkCalledStatus();
+    function cancelNumber() {
+      if (!myKey) return;
+      const confirmCancel = confirm("대기 취소하시겠습니까?");
+      if (confirmCancel) {
+        db.ref("waitingQueue/" + myKey).remove().then(() => {
+          localStorage.removeItem("myKey");
+          myKey = null;
+          myNumberEl.textContent = "-";
+          cancelBtn.style.display = "none";
+        });
       }
-    };
+    }
+
+    function notifyUser() {
+      if (Notification.permission === "granted") {
+        new Notification("곧 당신의 차례입니다!");
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            new Notification("곧 당신의 차례입니다!");
+          }
+        });
+      }
+    }
   </script>
 </body>
 </html>
