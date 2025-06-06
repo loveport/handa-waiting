@@ -8,22 +8,39 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <style>
     body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
-    .box { background: white; max-width: 500px; margin: auto; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; }
+    .box { background: white; max-width: 500px; margin: auto; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; text-align: center; }
     h2 { text-align: center; }
     button { width: 100%; padding: 15px; font-size: 18px; border: none; border-radius: 8px; background: #007BFF; color: white; cursor: pointer; margin-top: 10px; }
-    p { text-align: center; font-size: 18px; }
-    .notification-toggle { margin-top: 10px; text-align: center; }
+    .cancel-btn { background: #dc3545; }
+    .confirm-btn { background: #28a745; }
+    .notification-toggle { margin-top: 10px; }
+    #alertBox {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 15px;
+      display: none;
+    }
+    #alertBox strong { font-size: 20px; }
   </style>
 </head>
 <body>
   <div class="box">
     <h2>HANDA 부스</h2>
     <p>현재 호출 번호: <span id="currentNumber">0</span></p>
-    <p>내 대기 순번: <span id="myNumber">-</span></p>
+    <p>내 대기번호: <span id="myNumber">-</span></p>
+    <p>나의 순번: <span id="myOrder">-</span></p>
     <button onclick="takeNumber()">대기번호 받기</button>
-    <button onclick="cancelNumber()" id="cancelBtn" style="display:none; background:#dc3545;">대기 취소</button>
+    <button id="cancelBtn" class="cancel-btn" onclick="cancelWaiting()" style="display:none;">대기 취소</button>
+    <button id="arrivalBtn" class="confirm-btn" onclick="confirmArrival()" style="display:none;">도착 확인</button>
     <div class="notification-toggle">
       <label><input type="checkbox" id="notifyToggle" /> 알림 받기</label>
+    </div>
+    <div id="alertBox">
+      <strong>🔔 호출되었습니다!</strong>
+      <p>부스로 이동해 주세요.</p>
     </div>
   </div>
 
@@ -43,34 +60,44 @@
 
     const currentEl = document.getElementById("currentNumber");
     const myNumberEl = document.getElementById("myNumber");
+    const myOrderEl = document.getElementById("myOrder");
     const notifyToggle = document.getElementById("notifyToggle");
     const cancelBtn = document.getElementById("cancelBtn");
+    const arrivalBtn = document.getElementById("arrivalBtn");
+    const alertBox = document.getElementById("alertBox");
 
     let myKey = localStorage.getItem("myKey");
 
-    // 실시간 대기열 업데이트 감지
-    db.ref().on("value", snapshot => {
+    db.ref().on("value", (snapshot) => {
       const data = snapshot.val() || {};
       const current = data.currentNumber || 0;
       const queue = data.waitingQueue || {};
+      const calledList = data.calledList || {};
+
       currentEl.textContent = current;
 
-      if (myKey && queue[myKey]) {
-        const keys = Object.keys(queue);
-        const sorted = keys.sort((a, b) => queue[a] - queue[b]);
-        const myIndex = sorted.indexOf(myKey);
-        myNumberEl.textContent = myIndex >= 0 ? myIndex + 1 : "-";
+      if (myKey && queue[myKey] !== undefined) {
+        const sorted = Object.entries(queue).sort((a, b) => a[1] - b[1]);
+        const index = sorted.findIndex(([key]) => key === myKey);
+        myNumberEl.textContent = index + 1;
+        myOrderEl.textContent = index + 1;
+        cancelBtn.style.display = "inline-block";
+        arrivalBtn.style.display = "none";
+        alertBox.style.display = "none";
+      } else if (myKey && calledList.hasOwnProperty(myKey)) {
+        myNumberEl.textContent = "호출됨";
+        myOrderEl.textContent = "-";
+        cancelBtn.style.display = "none";
+        arrivalBtn.style.display = "inline-block";
+        alertBox.style.display = "block";
 
-        if (notifyToggle.checked && myIndex + 1 <= current) {
-          notifyUser();
-        }
+        if (notifyToggle.checked) notifyUser();
       } else {
-        if (myKey) {
-          myNumberEl.textContent = "-";
-          localStorage.removeItem("myKey");
-          myKey = null;
-          cancelBtn.style.display = "none";
-        }
+        myNumberEl.textContent = "-";
+        myOrderEl.textContent = "-";
+        cancelBtn.style.display = "none";
+        arrivalBtn.style.display = "none";
+        alertBox.style.display = "none";
       }
     });
 
@@ -79,34 +106,45 @@
         alert("이미 대기 중입니다.");
         return;
       }
-      db.ref("waitingQueue").push().then(ref => {
-        myKey = ref.key;
-        localStorage.setItem("myKey", myKey);
-        db.ref("waitingQueue/" + myKey).set(Date.now());
-        cancelBtn.style.display = "block";
-      });
+      const ref = db.ref("waitingQueue").push();
+      myKey = ref.key;
+      localStorage.setItem("myKey", myKey);
+      ref.set(Date.now());
     }
 
-    function cancelNumber() {
+    function cancelWaiting() {
       if (!myKey) return;
-      const confirmCancel = confirm("대기 취소하시겠습니까?");
-      if (confirmCancel) {
-        db.ref("waitingQueue/" + myKey).remove().then(() => {
+      if (confirm("대기를 취소하시겠습니까?")) {
+        db.ref("waitingQueue/" + myKey).remove();
+        db.ref("calledList/" + myKey).remove();
+        localStorage.removeItem("myKey");
+        myKey = null;
+        myNumberEl.textContent = "-";
+        myOrderEl.textContent = "-";
+        cancelBtn.style.display = "none";
+      }
+    }
+
+    function confirmArrival() {
+      if (myKey) {
+        db.ref("calledList/" + myKey).remove().then(() => {
           localStorage.removeItem("myKey");
           myKey = null;
           myNumberEl.textContent = "-";
-          cancelBtn.style.display = "none";
+          myOrderEl.textContent = "-";
+          arrivalBtn.style.display = "none";
+          alertBox.style.display = "none";
         });
       }
     }
 
     function notifyUser() {
       if (Notification.permission === "granted") {
-        new Notification("곧 당신의 차례입니다!");
+        new Notification("🔔 호출되었습니다! 부스로 이동해 주세요.");
       } else if (Notification.permission !== "denied") {
         Notification.requestPermission().then(permission => {
           if (permission === "granted") {
-            new Notification("곧 당신의 차례입니다!");
+            new Notification("🔔 호출되었습니다! 부스로 이동해 주세요.");
           }
         });
       }
