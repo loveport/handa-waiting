@@ -90,7 +90,6 @@
         cancelBtn.style.display = "none";
         arrivalBtn.style.display = "inline-block";
         alertBox.style.display = "block";
-
         if (notifyToggle.checked) notifyUser();
       } else {
         myNumberEl.textContent = "-";
@@ -103,9 +102,20 @@
 
     function takeNumber() {
       if (myKey) {
-        alert("이미 대기 중입니다.");
+        // Firebase에 key가 실제 존재하는지 확인
+        db.ref("waitingQueue/" + myKey).once("value", snapshot => {
+          if (snapshot.exists()) {
+            alert("이미 대기 중입니다.");
+          } else {
+            // 유령 키 제거 후 재시도
+            localStorage.removeItem("myKey");
+            myKey = null;
+            takeNumber(); // 다시 시도
+          }
+        });
         return;
       }
+
       const ref = db.ref("waitingQueue").push();
       myKey = ref.key;
       localStorage.setItem("myKey", myKey);

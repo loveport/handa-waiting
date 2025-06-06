@@ -13,10 +13,11 @@
     .btn { margin: 5px 0; padding: 10px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; width: 100%; }
     .btn-call { background: #007BFF; color: white; }
     .btn-reset { background: #DC3545; color: white; }
-    .btn-confirm { background: #28A745; color: white; }
+    .btn-confirm { background: #28A745; color: white; margin-left: 10px; }
     .input-group { text-align: center; margin-bottom: 15px; }
     input[type="password"] { padding: 10px; width: 100%; margin-top: 5px; }
     ul { padding-left: 20px; }
+    li { margin-bottom: 10px; }
   </style>
 </head>
 <body>
@@ -58,6 +59,8 @@
     const waitingEl = document.getElementById("waitingCount");
     const listEl = document.getElementById("waitingList");
 
+    let fullQueue = {};
+
     function checkPassword() {
       const pw = document.getElementById("adminPass").value;
       if (pw === "master4679") {
@@ -71,39 +74,46 @@
     db.ref().on("value", snapshot => {
       const data = snapshot.val() || {};
       const current = data.currentNumber || 0;
-      const calledList = data.calledList || {};
-      const fullQueue = data.waitingQueue || {};
+      const queue = data.waitingQueue || {};
+      const called = data.calledList || {};
 
+      fullQueue = queue;
       currentEl.textContent = current;
-      waitingEl.textContent = Object.keys(fullQueue).length;
+      waitingEl.textContent = Object.keys(queue).length;
+
       listEl.innerHTML = "";
 
-      Object.keys(calledList).forEach((key) => {
-        const timestamp = fullQueue[key] || Date.now();
+      // 대기자 목록 출력
+      Object.entries(queue).sort((a, b) => a[1] - b[1]).forEach(([key, time]) => {
         const li = document.createElement("li");
-        li.innerHTML = `호출됨: ${new Date(timestamp).toLocaleTimeString()} 
-          <button class='btn btn-confirm' onclick='confirmArrival("${key}")'>도착 확인</button>`;
+        li.textContent = `대기 접수: ${new Date(time).toLocaleTimeString()}`;
+        listEl.appendChild(li);
+      });
+
+      // 호출된 사용자 목록 출력
+      Object.keys(called).forEach(key => {
+        const li = document.createElement("li");
+        li.innerHTML = `호출됨 - 키 ${key} 
+          <button class="btn btn-confirm" onclick="confirmArrival('${key}')">도착 확인</button>`;
         listEl.appendChild(li);
       });
     });
 
     function callNext(count) {
-      db.ref("waitingQueue").once("value", snapshot => {
-        const queue = snapshot.val() || {};
-        const entries = Object.entries(queue).slice(0, count);
-        if (entries.length === 0) return;
+      const entries = Object.entries(fullQueue).sort((a, b) => a[1] - b[1]).slice(0, count);
+      if (entries.length === 0) return;
 
-        const times = entries.map(([_, time]) => time);
-        const latestTime = Math.max(...times);
-        const newCurrent = findQueueIndex(queue, latestTime) + 1;
+      const times = entries.map(([_, time]) => time);
+      const latestTime = Math.max(...times);
+      const newCurrent = findQueueIndex(latestTime) + 1;
+      db.ref("currentNumber").set(newCurrent);
 
-        db.ref("currentNumber").set(newCurrent);
-
-        entries.forEach(([key]) => {
-          db.ref("calledList/" + key).set(true);
-          db.ref("waitingQueue/" + key).remove();
-        });
+      const updates = {};
+      entries.forEach(([key]) => {
+        updates["calledList/" + key] = true;
+        updates["waitingQueue/" + key] = null;
       });
+      db.ref().update(updates);
     }
 
     function confirmArrival(key) {
@@ -113,15 +123,15 @@
     }
 
     function resetAll() {
-      if (confirm("대기번호와 호출 번호를 모두 초기화할까요?")) {
+      if (confirm("대기번호와 호출 목록을 모두 초기화할까요?")) {
         db.ref("currentNumber").set(0);
         db.ref("waitingQueue").remove();
         db.ref("calledList").remove();
       }
     }
 
-    function findQueueIndex(queue, time) {
-      const sorted = Object.values(queue).sort((a, b) => a - b);
+    function findQueueIndex(time) {
+      const sorted = Object.values(fullQueue).sort((a, b) => a - b);
       return sorted.indexOf(time);
     }
   </script>
