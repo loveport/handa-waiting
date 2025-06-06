@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>관리자 모드 - HANDA 부스</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f9f9f9; }
+    .box { max-width: 500px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; }
+    h2 { text-align: center; }
+    .btn { margin: 5px 0; padding: 10px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; width: 100%; }
+    .btn-call { background: #007BFF; color: white; }
+    .btn-reset { background: #DC3545; color: white; }
+    .btn-confirm { background: #28A745; color: white; }
+    .input-group { text-align: center; margin-bottom: 15px; }
+    input[type="password"] { padding: 10px; width: 100%; margin-top: 5px; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <div class="box" id="loginBox">
+    <h2>관리자 로그인</h2>
+    <div class="input-group">
+      <label for="adminPass">비밀번호:</label>
+      <input type="password" id="adminPass" />
+      <button class="btn btn-call" onclick="checkPassword()">입장</button>
+    </div>
+  </div>
+
+  <div class="box" id="adminBox" style="display:none;">
+    <h2>🛠 관리자 모드 - HANDA 부스</h2>
+    <p>현재 호출 번호: <span id="currentNumber">0</span></p>
+    <p>대기 인원: <span id="waitingCount">0</span></p>
+    <ul id="waitingList"></ul>
+    <button class="btn btn-call" onclick="callNext(1)">1명 호출</button>
+    <button class="btn btn-call" onclick="callNext(3)">3명 호출</button>
+    <button class="btn btn-call" onclick="callNext(5)">5명 호출</button>
+    <button class="btn btn-reset" onclick="resetAll()">전체 리셋</button>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCd7VZ-Ihr-BKaZB3zGioJFOXE5kDSG9o4",
+      authDomain: "handawaiting-fa63c.firebaseapp.com",
+      databaseURL: "https://handawaiting-fa63c-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "handawaiting-fa63c",
+      storageBucket: "handawaiting-fa63c.appspot.com",
+      messagingSenderId: "799592766063",
+      appId: "1:799592766063:web:aa55ba86ddb04d3f7a4b9a"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const currentEl = document.getElementById("currentNumber");
+    const waitingEl = document.getElementById("waitingCount");
+    const listEl = document.getElementById("waitingList");
+
+    function checkPassword() {
+      const pw = document.getElementById("adminPass").value;
+      if (pw === "master4679") {
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("adminBox").style.display = "block";
+      } else {
+        alert("비밀번호가 틀렸습니다");
+      }
+    }
+
+    db.ref().on("value", snapshot => {
+      const data = snapshot.val() || {};
+      const current = data.currentNumber || 0;
+      const calledList = data.calledList || {};
+      const fullQueue = data.waitingQueue || {};
+
+      currentEl.textContent = current;
+      waitingEl.textContent = Object.keys(fullQueue).length;
+      listEl.innerHTML = "";
+
+      Object.keys(calledList).forEach((key) => {
+        const timestamp = fullQueue[key] || Date.now();
+        const li = document.createElement("li");
+        li.innerHTML = `호출됨: ${new Date(timestamp).toLocaleTimeString()} 
+          <button class='btn btn-confirm' onclick='confirmArrival("${key}")'>도착 확인</button>`;
+        listEl.appendChild(li);
+      });
+    });
+
+    function callNext(count) {
+      db.ref("waitingQueue").once("value", snapshot => {
+        const queue = snapshot.val() || {};
+        const entries = Object.entries(queue).slice(0, count);
+        if (entries.length === 0) return;
+
+        const times = entries.map(([_, time]) => time);
+        const latestTime = Math.max(...times);
+        const newCurrent = findQueueIndex(queue, latestTime) + 1;
+
+        db.ref("currentNumber").set(newCurrent);
+
+        entries.forEach(([key]) => {
+          db.ref("calledList/" + key).set(true);
+          db.ref("waitingQueue/" + key).remove();
+        });
+      });
+    }
+
+    function confirmArrival(key) {
+      if (confirm("이 사용자가 도착했나요?")) {
+        db.ref("calledList/" + key).remove();
+      }
+    }
+
+    function resetAll() {
+      if (confirm("대기번호와 호출 번호를 모두 초기화할까요?")) {
+        db.ref("currentNumber").set(0);
+        db.ref("waitingQueue").remove();
+        db.ref("calledList").remove();
+      }
+    }
+
+    function findQueueIndex(queue, time) {
+      const sorted = Object.values(queue).sort((a, b) => a - b);
+      return sorted.indexOf(time);
+    }
+  </script>
+</body>
+</html>
