@@ -4,8 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HANDA 부스 웨이팅</title>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <!-- ✅ Firebase SDK (compat 버전으로 수정) -->
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js"></script>
   <style>
     body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
     .box { background: white; max-width: 500px; margin: auto; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px #ccc; text-align: center; }
@@ -48,15 +50,16 @@
     const firebaseConfig = {
       apiKey: "AIzaSyCd7VZ-Ihr-BKaZB3zGioJFOXE5kDSG9o4",
       authDomain: "handawaiting-fa63c.firebaseapp.com",
-      databaseURL: "https://handawaiting-fa63c-default-rtdb.asia-southeast1.firebasedatabase.app",
       projectId: "handawaiting-fa63c",
       storageBucket: "handawaiting-fa63c.appspot.com",
       messagingSenderId: "799592766063",
-      appId: "1:799592766063:web:aa55ba86ddb04d3f7a4b9a"
+      appId: "1:799592766063:web:aa55ba86ddb04d3f7a4b9a",
+      databaseURL: "https://handawaiting-fa63c-default-rtdb.asia-southeast1.firebasedatabase.app"
     };
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    const messaging = firebase.messaging();
 
     const currentEl = document.getElementById("currentNumber");
     const myNumberEl = document.getElementById("myNumber");
@@ -102,20 +105,17 @@
 
     function takeNumber() {
       if (myKey) {
-        // Firebase에 key가 실제 존재하는지 확인
         db.ref("waitingQueue/" + myKey).once("value", snapshot => {
           if (snapshot.exists()) {
             alert("이미 대기 중입니다.");
           } else {
-            // 유령 키 제거 후 재시도
             localStorage.removeItem("myKey");
             myKey = null;
-            takeNumber(); // 다시 시도
+            takeNumber();
           }
         });
         return;
       }
-
       const ref = db.ref("waitingQueue").push();
       myKey = ref.key;
       localStorage.setItem("myKey", myKey);
@@ -132,6 +132,8 @@
         myNumberEl.textContent = "-";
         myOrderEl.textContent = "-";
         cancelBtn.style.display = "none";
+        arrivalBtn.style.display = "none";
+        alertBox.style.display = "none";
       }
     }
 
@@ -158,6 +160,32 @@
           }
         });
       }
+    }
+
+    // 🔔 푸시 알림을 위한 서비스 워커 등록 및 토큰 요청
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('firebase-messaging-sw.js')
+        .then(function (registration) {
+          console.log('서비스 워커 등록 성공:', registration);
+          return Notification.requestPermission();
+        })
+        .then(function (permission) {
+          if (permission === 'granted') {
+            messaging.getToken({ vapidKey: 'BMvZVGMsMJTgrzKLLbPlVp9_yITOVvuWSFOR9GHijiaBFTwjVnPbYwHsp4z2EkDEYy5sBJGYUD1czWrbNNxBvgU' })
+              .then(function (currentToken) {
+                if (currentToken) {
+                  console.log('사용자 FCM 토큰:', currentToken);
+                } else {
+                  console.log('토큰을 가져올 수 없습니다.');
+                }
+              })
+              .catch(function (err) {
+                console.log('토큰 오류:', err);
+              });
+          } else {
+            console.log('알림 권한이 거부되었습니다.');
+          }
+        });
     }
   </script>
 </body>
